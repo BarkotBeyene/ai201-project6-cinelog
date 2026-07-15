@@ -7,10 +7,12 @@ tests/test_collection.py.
 
 import pytest
 from app import create_app, db
-from models import User, Film
+from models import User, Film, WatchlistEntry
 from services.watchlist_service import (
     add_to_watchlist,
+    remove_from_watchlist,
     FilmNotFoundError,
+    NotOnWatchlistError,
 )
 
 
@@ -36,6 +38,44 @@ def sample_user(app):
         db.session.add(user)
         db.session.commit()
         return user.id
+
+
+@pytest.fixture
+def sample_film(app):
+    """A film to use in tests."""
+    with app.app_context():
+        film = Film(title="Paddington 2", year=2017, genre="Comedy")
+        db.session.add(film)
+        db.session.commit()
+        return film.id
+
+
+# ── Removal ───────────────────────────────────────────────────────────────────
+
+def test_remove_from_watchlist_removes_entry(app, sample_user, sample_film):
+    """
+    Removing a film that's on the watchlist should delete the WatchlistEntry.
+    """
+    with app.app_context():
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+        result = remove_from_watchlist(user_id=sample_user, film_id=sample_film)
+        assert result is True
+
+        in_db = WatchlistEntry.query.filter_by(
+            user_id=sample_user, film_id=sample_film
+        ).first()
+        assert in_db is None
+
+
+def test_remove_from_watchlist_not_on_watchlist_raises(app, sample_user, sample_film):
+    """
+    Removing a film that was never added to the watchlist should raise
+    NotOnWatchlistError, not silently succeed.
+    """
+    with app.app_context():
+        with pytest.raises(NotOnWatchlistError):
+            remove_from_watchlist(user_id=sample_user, film_id=sample_film)
 
 
 # ── Nonexistent film ─────────────────────────────────────────────────────────
